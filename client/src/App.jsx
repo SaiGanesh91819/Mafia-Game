@@ -64,6 +64,9 @@ const SelectionGrid = ({ players, onSelect, currentSelection, tempSelection, fil
 // --- AUDIO SYSTEM ---
 const SoundFX = {
   ctx: new (window.AudioContext || window.webkitAudioContext)(),
+  unlock: () => {
+      if (SoundFX.ctx.state === 'suspended') SoundFX.ctx.resume();
+  },
   playTone: (freq, type, duration, vol=0.1) => {
     if (SoundFX.ctx.state === 'suspended') SoundFX.ctx.resume();
     const osc = SoundFX.ctx.createOscillator();
@@ -166,7 +169,19 @@ function App() {
     
     socket.on('error_message', (msg) => { SoundFX.alert(); alert(msg); });
     socket.on('police_result', (r) => { SoundFX.reveal(); setPoliceResult(r); });
-    return () => { socket.off('connect'); socket.off('state_update'); socket.off('police_result'); };
+    
+    // Unlock Audio on Mobile
+    const unlockAudio = () => { SoundFX.unlock(); window.removeEventListener('touchstart', unlockAudio); window.removeEventListener('click', unlockAudio); };
+    window.addEventListener('touchstart', unlockAudio);
+    window.addEventListener('click', unlockAudio);
+
+    return () => { 
+        socket.off('connect'); 
+        socket.off('state_update'); 
+        socket.off('police_result');
+        window.removeEventListener('touchstart', unlockAudio);
+        window.removeEventListener('click', unlockAudio);
+    };
   }, [myPlayerId]);
 
   const handleCreate = () => {
