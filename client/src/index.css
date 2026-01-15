@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap');
 :root {
   /* DARK MODE (DEFAULT/NIGHT) */
   --bg-primary: #000000;
@@ -43,7 +44,7 @@
   --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap');
+
 
 html, body {
   margin: 0;
