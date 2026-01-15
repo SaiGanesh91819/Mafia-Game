@@ -50,17 +50,21 @@ io.on('connection', (socket) => {
     });
 
     socket.on('join_game', ({ name, playerId }) => {
-        if (!gameConfig.isCreated || gameState.phase !== 'LOBBY') return socket.emit('error_message', "Cannot join now.");
-        
-        // Check if player already exists (rejoining via name/id)
+        if (!gameConfig.isCreated) return socket.emit('error_message', "No game created.");
+
+        // 1. Check if player already exists (rejoining) - Allow this ANYTIME
         const existing = players.find(p => p.playerId === playerId);
         if (existing) {
              existing.id = socket.id;
              existing.connected = true;
-             existing.name = name;
+             existing.name = name; // Update name just in case
+             socket.emit('state_update', { players, gameState, gameConfig }); // Immediate update for them
              broadcastState();
              return;
         }
+
+        // 2. New Player? Must be LOBBY phase
+        if (gameState.phase !== 'LOBBY') return socket.emit('error_message', "Game in Progress. Cannot join now.");
 
         const totalRoles = (gameConfig.roles.terrorist || 0) + (gameConfig.roles.police || 0) + (gameConfig.roles.doctor || 0) + (gameConfig.roles.villager || 0);
         if (players.length - 1 >= totalRoles) return socket.emit('error_message', "Lobby is Full!");
