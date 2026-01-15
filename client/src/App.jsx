@@ -184,7 +184,7 @@ function App() {
               <h1>MAFIA <span style={{color: 'var(--accent-red)'}}>LAN</span></h1>
               <div className="card">
                   <input className="input-primary"
-                    value={inputName} onChange={e => setInputName(e.target.value)} placeholder="ENTER CODENAME" maxLength={12}/>
+                    value={inputName} onChange={e => setInputName(e.target.value)} placeholder="ENTER NAME" maxLength={12}/>
                   
                   {gameConfig.isCreated ? (
                       <button className="btn btn-primary" onClick={() => { if(!inputName)return alert("Name!"); SoundFX.click(); socket.emit('join_game', { name: inputName, playerId: myPlayerId })}}>
