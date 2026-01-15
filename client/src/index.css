@@ -1,0 +1,201 @@
+:root {
+  /* DARK MODE (DEFAULT/NIGHT) */
+  --bg-primary: #000000;
+  --bg-secondary: #121212;
+  --bg-card: #1e1e1e;
+  
+  --text-primary: #ffffff;
+  --text-secondary: #cccccc;
+  
+  --border-color: #333333;
+  --input-bg: #222222;
+  --placeholder-color: #666666;
+  
+  --accent-red: #ff4545;
+  --accent-blue: #4da6ff;
+  --accent-gold: #ffd700;
+  --accent-green: #00e676;
+
+  --font-main: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --radius-md: 12px;
+  --radius-lg: 16px;
+}
+
+/* DAY MODE OVERRIDE */
+.day-mode {
+  --bg-primary: #f0f2f5;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  
+  --text-primary: #1a1a1a;
+  --text-secondary: #444444;
+  
+  --border-color: #cccccc;
+  --input-bg: #f9f9f9;
+  --placeholder-color: #888888;
+  
+  --accent-red: #d32f2f;
+  --accent-blue: #0066cc;
+  --accent-gold: #bfa000; /* Darker gold */
+  --accent-green: #007c41;
+
+  --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap');
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-main);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden;
+  transition: background 0.5s ease;
+}
+
+/* LAYOUT CONTAINER */
+.container {
+  min-height: 100vh;
+  width: 100%;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+}
+
+/* CARDS */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  width: 100%;
+  max-width: 500px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-card);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+/* TYPOGRAPHY */
+h1 { font-size: 2.2rem; margin: 0 0 16px 0; font-weight: 700; }
+h2 { font-size: 1.8rem; margin: 0 0 12px 0; font-weight: 600; color: var(--accent-gold); }
+h3 { font-size: 1.4rem; margin: 0 0 10px 0; font-weight: 500; color: var(--text-secondary); }
+p { font-size: 1rem; line-height: 1.5; color: var(--text-secondary); margin-bottom: 16px; font-weight: 500;}
+
+.day-mode h2 { color: var(--accent-blue); }
+
+/* FORMS & INPUTS */
+label {
+  display: block;
+  text-align: left;
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+input.input-primary {
+  width: 100%;
+  padding: 18px;
+  border-radius: var(--radius-md);
+  border: 2px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-family: var(--font-main);
+  font-size: 1.1rem;
+  font-weight: 600;
+  box-sizing: border-box;
+  margin-bottom: 20px;
+  transition: all 0.2s;
+}
+
+input.input-primary::placeholder { color: var(--placeholder-color); opacity: 1; }
+input.input-primary:focus { outline: none; border-color: var(--accent-blue); box-shadow: 0 0 0 3px rgba(77, 166, 255, 0.2); }
+
+/* BUTTONS */
+button, .btn {
+  width: 100%;
+  padding: 18px;
+  border-radius: var(--radius-md);
+  border: none;
+  font-family: var(--font-main);
+  font-size: 1.1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: transform 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 10px 0;
+}
+
+button:active { transform: scale(0.96); }
+
+.btn-primary { background: var(--accent-blue); color: #fff; box-shadow: 0 4px 15px rgba(77, 166, 255, 0.3); }
+.btn-secondary { background: transparent; border: 2px solid var(--border-color); color: var(--text-primary); }
+.btn-danger { background: var(--accent-red); color: #fff; }
+
+button:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); box-shadow: none; }
+
+/* GRID & LISTS */
+.config-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 20px; }
+.player-list { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin: 24px 0; }
+
+.player-item {
+  background: var(--input-bg);
+  color: var(--text-primary);
+  border: 2px solid var(--border-color);
+  padding: 14px 20px;
+  border-radius: 50px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 100px;
+  text-align: center;
+  font-size: 1.1rem;
+}
+
+.player-item.selected {
+  border-color: var(--accent-gold);
+  background: rgba(255, 215, 0, 0.1);
+  transform: scale(1.05); /* Slight pop */
+}
+.player-item.confirmed { border-color: var(--accent-blue); background: var(--accent-blue); color: #fff; }
+
+/* HEADER */
+.top-bar { width: 100%; max-width: 600px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; z-index: 5; }
+.phase-badge { background: rgba(128,128,128,0.2); backdrop-filter: blur(10px); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 20px; font-weight: 700; font-size: 0.9rem; }
+
+/* REVEAL */
+.role-reveal-container { perspective: 1200px; width: 100%; height: 450px; cursor: pointer; margin: 20px auto; }
+.role-card-inner { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transition: transform 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275); border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+.role-reveal-container.flipped .role-card-inner { transform: rotateY(180deg); }
+.role-front, .role-back { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 20px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; background: #111; color: white; border: 1px solid rgba(255,255,255,0.1); }
+.role-back { transform: rotateY(180deg); background: #000; border: 2px solid var(--accent-gold); }
+.secret-stamp { border: 4px solid var(--accent-red); color: var(--accent-red); font-size: 2rem; font-weight: 900; padding: 10px 20px; transform: rotate(-10deg); opacity: 0.9; text-transform: uppercase; letter-spacing: 2px; border-radius: 8px; margin-bottom: 20px; }
+
+/* MOBILE BREAKPOINTS */
+@media (max-width: 480px) {
+  .container { padding: 16px; }
+  h1 { font-size: 1.8rem; }
+  .card { padding: 16px; }
+  .btn, .input-primary { padding: 16px; font-size: 1rem; }
+  .role-reveal-container { height: 400px; }
+}
+
+/* UTILS */
+.loader { display: inline-block; animation: pulse 1s infinite; font-weight: bold; }
+@keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }

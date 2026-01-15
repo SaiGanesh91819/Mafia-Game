@@ -1,0 +1,21 @@
+{
+  "name": "Mafia LAN Party",
+  "short_name": "Mafia",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0d0d12",
+  "theme_color": "#0d0d12",
+  "description": "Local LAN Mafia Game",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/10058/10058988.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/10058/10058988.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
