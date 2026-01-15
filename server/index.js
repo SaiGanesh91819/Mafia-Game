@@ -27,147 +27,311 @@ const getRoleDetails = (role) => {
     }
 };
 
-const broadcastState = () => io.emit('state_update', { players, gameState, gameConfig });
+// const broadcastState = () => io.emit('state_update', { players, gameState, gameConfig });
+
+const games = new Map(); // roomId -> { config, state, players[], hostId, timer }
+
+const generateRoomId = () => Math.random().toString(36).substr(2, 6).toUpperCase();
+
+// Helper: Broadcast state to a specific room
+const broadcastRoom = (roomId, io) => {
+    const game = games.get(roomId);
+    if (!game) return;
+    io.to(roomId).emit('state_update', { 
+        players: game.players, 
+        gameState: game.state, 
+        gameConfig: game.config,
+        roomId 
+    });
+};
+
+const broadcastRoomsList = (io) => {
+    const list = [];
+    games.forEach((g, id) => {
+        if(g.state.phase === 'LOBBY') list.push({ id, name: g.config.gameName, count: g.players.length, host: g.players.find(p=>p.isHost)?.name });
+    });
+    io.emit('rooms_list', list);
+};
 
 io.on('connection', (socket) => {
-    socket.emit('state_update', { players, gameState, gameConfig });
-
-    socket.on('reconnect_session', ({ playerId }) => {
-        const existingPlayer = players.find(p => p.playerId === playerId);
-        if (existingPlayer) {
-            existingPlayer.id = socket.id; // Update Socket ID
-            existingPlayer.connected = true;
-            socket.emit('state_update', { players, gameState, gameConfig });
-            broadcastState(); // Notify others he is back
-        }
-    });
+    console.log('User connected:', socket.id);
+    
+    // Send list of rooms on connect
+    broadcastRoomsList(io);
 
     socket.on('create_game_setup', ({ name, hostName, roles, playerId }) => {
-        players = [{ id: socket.id, playerId, name: hostName, isHost: true, isAlive: true, role: 'HOST', connected: true, roleViewed: true }];
-        gameState = { phase: 'LOBBY', round: 0, nightActions: {}, dayVotes: {} };
-        gameConfig = { isCreated: true, gameName: name, roles: roles };
-        broadcastState();
+        const roomId = generateRoomId();
+        const initialPlayers = [{ 
+            id: socket.id, 
+            playerId,
+            name: hostName, 
+            isHost: true, 
+            isAlive: true, 
+            role: 'HOST', 
+            connected: true,
+            roleViewed: true 
+        }];
+        
+        games.set(roomId, {
+            config: { gameName: name, roles, isCreated: true },
+            state: { phase: 'LOBBY', message: 'Waiting for players...', dayVotes: {}, nightActions: {}, victim: null, winner: null },
+            players: initialPlayers,
+            hostId: socket.id
+        });
+        
+        socket.join(roomId);
+        // Tag socket with roomId for easy lookup on disconnect
+        socket.data.roomId = roomId;
+        socket.data.playerId = playerId;
+        
+        broadcastRoom(roomId, io);
+        broadcastRoomsList(io);
     });
 
-    socket.on('join_game', ({ name, playerId }) => {
-        if (!gameConfig.isCreated) return socket.emit('error_message', "No game created.");
-
-        // 1. Check if player already exists (rejoining) - Allow this ANYTIME
-        const existing = players.find(p => p.playerId === playerId);
+    socket.on('join_game', ({ roomId, name, playerId }) => {
+        const game = games.get(roomId);
+        if (!game) return socket.emit('error_message', "Game not found.");
+        
+        // 1. Rejoin Check
+        const existing = game.players.find(p => p.playerId === playerId);
         if (existing) {
              existing.id = socket.id;
              existing.connected = true;
-             existing.name = name; // Update name just in case
-             socket.emit('state_update', { players, gameState, gameConfig }); // Immediate update for them
-             broadcastState();
+             existing.name = name; // Update name
+             socket.join(roomId);
+             socket.data.roomId = roomId;
+             socket.data.playerId = playerId;
+             broadcastRoom(roomId, io);
              return;
         }
 
-        // 2. New Player? Must be LOBBY phase
-        if (gameState.phase !== 'LOBBY') return socket.emit('error_message', "Game in Progress. Cannot join now.");
+        // 2. New Player Check
+        if (game.state.phase !== 'LOBBY') return socket.emit('error_message', "Game in Progress. Cannot join now.");
 
-        const totalRoles = (gameConfig.roles.terrorist || 0) + (gameConfig.roles.police || 0) + (gameConfig.roles.doctor || 0) + (gameConfig.roles.villager || 0);
-        if (players.length - 1 >= totalRoles) return socket.emit('error_message', "Lobby is Full!");
+        const totalRoles = (game.config.roles.terrorist || 0) + (game.config.roles.police || 0) + (game.config.roles.doctor || 0) + (game.config.roles.villager || 0);
+        if (game.players.length - 1 >= totalRoles) return socket.emit('error_message', "Lobby is Full!");
 
-        players.push({ id: socket.id, playerId, name, isHost: false, isAlive: true, role: null, connected: true, roleViewed: false });
-        broadcastState();
+        game.players.push({ id: socket.id, playerId, name, isHost: false, isAlive: true, role: null, connected: true, roleViewed: false });
+        socket.join(roomId);
+        socket.data.roomId = roomId;
+        socket.data.playerId = playerId;
+        
+        broadcastRoom(roomId, io);
+        broadcastRoomsList(io);
     });
-
-    socket.on('start_game', () => {
-        const nonHost = players.filter(p => !p.isHost);
-        const { terrorist, police, doctor, villager } = gameConfig.roles;
-        
-        let available = [];
-        for(let i=0; i<terrorist; i++) available.push('TERRORIST');
-        for(let i=0; i<police; i++) available.push('POLICE');
-        for(let i=0; i<doctor; i++) available.push('DOCTOR');
-        for(let i=0; i<villager; i++) available.push('VILLAGER');
-        
-        while(available.length < nonHost.length) available.push('VILLAGER');
-        available.sort(() => Math.random() - 0.5);
-
-        let idx = 0;
-        players = players.map(p => {
-            if (p.isHost) return { ...p, role: 'HOST', isAlive: true, roleViewed: true };
-            if (idx >= available.length) return { ...p, role: 'VILLAGER', roleDetails: getRoleDetails('VILLAGER'), isAlive: true, roleViewed: false };
-            return { ...p, role: available[idx++], roleDetails: getRoleDetails(available[idx-1]), isAlive: true, roleViewed: false };
+    
+    socket.on('reconnect_session', ({ playerId }) => {
+        // Find which room this player belongs to
+        let foundRoomId = null;
+        games.forEach((g, rId) => {
+            if (g.players.find(p => p.playerId === playerId)) foundRoomId = rId;
         });
-        
-        gameState.phase = 'ROLE_REVEAL';
-        broadcastState();
-    });
 
-    socket.on('ack_role', () => {
-        players = players.map(p => p.id === socket.id ? { ...p, roleViewed: true } : p);
-        broadcastState();
-    });
-
-    socket.on('start_night', () => {
-        gameState.round++;
-        gameState.nightActions = { terroristSelection: null, policeSelection: null, doctorSelection: null };
-        gameState.victim = null;
-        gameState.phase = 'NIGHT_TERRORIST';
-        broadcastState();
-    });
-
-    socket.on('terrorist_select', (id) => { gameState.nightActions.terroristSelection = id; broadcastState(); });
-    socket.on('host_confirm_terrorist', () => { gameState.phase = 'NIGHT_POLICE'; broadcastState(); });
-
-    socket.on('police_select', (id) => { 
-        gameState.nightActions.policeSelection = id; 
-        broadcastState();
-        const target = players.find(p => p.id === id);
-        io.to(socket.id).emit('police_result', { isTerrorist: target?.role === 'TERRORIST' });
-    });
-    socket.on('host_confirm_police', () => { gameState.phase = 'NIGHT_DOCTOR'; broadcastState(); });
-
-    socket.on('doctor_select', (id) => { gameState.nightActions.doctorSelection = id; broadcastState(); });
-    socket.on('host_confirm_doctor', () => { 
-        const { terroristSelection, doctorSelection } = gameState.nightActions;
-        gameState.victim = (terroristSelection && terroristSelection !== doctorSelection) ? terroristSelection : null;
-        if (gameState.victim) players = players.map(p => p.id === gameState.victim ? { ...p, isAlive: false } : p);
-        gameState.phase = 'DAY_ANNOUNCE';
-        broadcastState();
-    });
-
-    socket.on('start_discussion', () => { gameState.phase = 'DAY_DISCUSSION'; broadcastState(); });
-    socket.on('start_voting', () => { gameState.phase = 'DAY_VOTE'; gameState.dayVotes = {}; broadcastState(); });
-    socket.on('cast_vote', ({ voterId, targetId }) => { gameState.dayVotes[voterId] = targetId; broadcastState(); });
-    
-    socket.on('finalize_vote', () => {
-        const counts = {};
-        Object.values(gameState.dayVotes).forEach(t => counts[t] = (counts[t]||0)+1);
-        let max=0, cands=[];
-        for (const [t,c] of Object.entries(counts)) { if(c>max){max=c;cands=[t]}else if(c===max)cands.push(t) }
-        
-        if (cands.length === 1) {
-            gameState.eliminated = cands[0];
-            players = players.map(p => p.id === cands[0] ? { ...p, isAlive: false } : p);
-            const winner = checkWin();
-            gameState.phase = winner ? 'GAME_OVER' : 'DAY_ELIMINATION';
-            gameState.winner = winner;
+        if (foundRoomId) {
+            const game = games.get(foundRoomId);
+            const p = game.players.find(p => p.playerId === playerId);
+            if (p) {
+                p.id = socket.id;
+                p.connected = true;
+                socket.join(foundRoomId);
+                socket.data.roomId = foundRoomId;
+                socket.data.playerId = playerId;
+                broadcastRoom(foundRoomId, io);
+            }
         } else {
-            gameState.message = "Tie! Discuss again.";
-            gameState.phase = 'DAY_DISCUSSION';
+            // Not in any active game, just send list
+            broadcastRoomsList(io);
         }
-        broadcastState();
     });
-    
-    socket.on('next_round', () => {
-        gameState.phase = 'NIGHT_TERRORIST';
-        gameState.round++;
-        gameState.nightActions = {};
-        broadcastState();
-    });
-    socket.on('close_game', () => { gameConfig.isCreated = false; gameState.phase = 'SETUP'; broadcastState(); }); 
 
     socket.on('disconnect', () => {
-        // Just mark as disconnected, don't remove unless in SETUP
-        players = players.map(p => p.id === socket.id ? { ...p, connected: false } : p);
-        if (gameState.phase === 'SETUP') players = players.filter(p => p.id !== socket.id); // Clean up in setup only
-        broadcastState();
+        const roomId = socket.data.roomId;
+        if (!roomId) return;
+        
+        const game = games.get(roomId);
+        if (!game) return;
+
+        const p = game.players.find(p => p.id === socket.id);
+        if (p) {
+            p.connected = false;
+            
+            // HOST DISCONNECT LOGIC
+            if (p.isHost && game.state.phase === 'LOBBY') {
+                // ABORT GAME
+                io.to(roomId).emit('error_message', "Host disconnected. Game aborted.");
+                io.to(roomId).emit('game_closed'); // Force clients to return to landing
+                io.in(roomId).socketsLeave(roomId); // Kick everyone out of room
+                games.delete(roomId);
+                broadcastRoomsList(io);
+                return;
+            }
+            
+            // Normal Player Disconnect
+            if (game.state.phase === 'LOBBY') {
+                game.players = game.players.filter(pl => pl.id !== socket.id);
+                broadcastRoom(roomId, io);
+                broadcastRoomsList(io);
+            } else {
+                // In-game: Just mark disconnected (Persistence)
+                broadcastRoom(roomId, io);
+            }
+        }
     });
+    
+    // --- GAME ACTIONS (Bound to Room) ---
+    const withGame = (cb) => {
+        const rId = socket.data.roomId;
+        if(rId && games.has(rId)) cb(games.get(rId), rId);
+    };
+
+    socket.on('start_game', () => withGame((game, roomId) => {
+        // ... (Existing Start Logic, updated to use 'game' obj) ...
+        const required = (game.config.roles.terrorist||0) + (game.config.roles.police||0) + (game.config.roles.doctor||0) + (game.config.roles.villager||0);
+        if (game.players.length - 1 < required) return socket.emit('error_message', `Need ${required} players!`);
+        
+        // Assign Roles
+        let deck = [];
+        ['terrorist','police','doctor','villager'].forEach(r => {
+             for(let i=0; i<(game.config.roles[r]||0); i++) deck.push(r.toUpperCase());
+        });
+        // Shuffle
+        for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; }
+        
+        let deckIdx = 0;
+        game.players.forEach(p => {
+            if (!p.isHost) { p.role = deck[deckIdx++] || 'VILLAGER'; p.isAlive = true; p.roleViewed = false; }
+        });
+        
+        game.state.phase = 'ROLE_REVEAL';
+        broadcastRoom(roomId, io);
+        broadcastRoomsList(io); // Update lobby count/status
+    }));
+    
+    socket.on('ack_role', () => withGame((game, roomId) => {
+        const p = game.players.find(p => p.id === socket.id);
+        if(p) { p.roleViewed = true; broadcastRoom(roomId, io); }
+    }));
+
+    socket.on('start_night', () => withGame((game, roomId) => {
+        game.state.phase = 'NIGHT_TERRORIST';
+        game.state.nightActions = {};
+        broadcastRoom(roomId, io);
+    }));
+    
+    socket.on('terrorist_select', (id) => withGame((game, roomId) => {
+        if (!game.state.nightActions) game.state.nightActions = {};
+        game.state.nightActions.terroristSelection = id;
+        broadcastRoom(roomId, io);
+    }));
+
+    socket.on('host_confirm_terrorist', () => withGame((game, roomId) => {
+        game.state.phase = 'NIGHT_POLICE';
+        broadcastRoom(roomId, io);
+    }));
+    
+    socket.on('police_select', (id) => withGame((game, roomId) => {
+        if (!game.state.nightActions) game.state.nightActions = {};
+        game.state.nightActions.policeSelection = id;
+        broadcastRoom(roomId, io);
+        const target = game.players.find(p => p.id === id);
+        socket.emit('police_result', { isTerrorist: target?.role === 'TERRORIST' });
+    }));
+    
+    socket.on('host_confirm_police', () => withGame((game, roomId) => {
+        game.state.phase = 'NIGHT_DOCTOR';
+        broadcastRoom(roomId, io);
+    }));
+
+     socket.on('doctor_select', (id) => withGame((game, roomId) => {
+        if (!game.state.nightActions) game.state.nightActions = {};
+        game.state.nightActions.doctorSelection = id;
+        broadcastRoom(roomId, io);
+    }));
+
+    socket.on('host_confirm_doctor', () => withGame((game, roomId) => {
+        // Resolve Night
+        const victimId = game.state.nightActions.terroristSelection;
+        const savedId = game.state.nightActions.doctorSelection;
+        
+        game.state.victim = (victimId && victimId !== savedId) ? victimId : null;
+        if (game.state.victim) {
+            const v = game.players.find(p => p.id === game.state.victim);
+            if(v) v.isAlive = false;
+        }
+        
+        game.state.phase = 'DAY_ANNOUNCE';
+        checkWinCondition(game, roomId, io);
+        if(game.state.phase !== 'GAME_OVER') broadcastRoom(roomId, io);
+    }));
+
+    socket.on('start_discussion', () => withGame((game, roomId) => {
+        game.state.phase = 'DAY_DISCUSSION';
+        broadcastRoom(roomId, io);
+    }));
+
+    socket.on('start_voting', () => withGame((game, roomId) => {
+        game.state.phase = 'DAY_VOTE';
+        game.state.dayVotes = {};
+        broadcastRoom(roomId, io);
+    }));
+
+    socket.on('cast_vote', ({ voterId, targetId }) => withGame((game, roomId) => {
+        if (!game.state.dayVotes) game.state.dayVotes = {};
+        game.state.dayVotes[voterId] = targetId;
+        broadcastRoom(roomId, io);
+    }));
+
+    socket.on('finalize_vote', () => withGame((game, roomId) => {
+         // Tally
+         const counts = {};
+         Object.values(game.state.dayVotes).forEach(id => counts[id] = (counts[id]||0)+1);
+         let max = 0, eliminated = null;
+         Object.entries(counts).forEach(([id, c]) => { if(c > max){ max=c; eliminated=id; } else if(c===max) eliminated=null; });
+         
+         if (eliminated) {
+             const p = game.players.find(p => p.id === eliminated);
+             if(p) p.isAlive = false;
+             game.state.eliminated = eliminated;
+             game.state.phase = 'DAY_ELIMINATION';
+         } else {
+             game.state.eliminated = null;
+             game.state.message = "Tie vote. No one eliminated.";
+             game.state.phase = 'DAY_DISCUSSION'; // Loop back if tie
+         }
+         
+         checkWinCondition(game, roomId, io);
+         if(game.state.phase !== 'GAME_OVER') broadcastRoom(roomId, io);
+    }));
+    
+    socket.on('next_round', () => withGame((game, roomId) => {
+        game.state.phase = 'NIGHT_TERRORIST';
+        game.state.nightActions = {};
+        broadcastRoom(roomId, io);
+    }));
+
+    socket.on('close_game', () => withGame((game, roomId) => {
+        io.to(roomId).emit('game_closed');
+        io.in(roomId).socketsLeave(roomId);
+        games.delete(roomId);
+        broadcastRoomsList(io);
+    }));
+
 });
+
+function checkWinCondition(game, roomId, io) {
+    const terrorists = game.players.filter(p => p.role === 'TERRORIST' && p.isAlive).length;
+    const innocent = game.players.filter(p => p.role !== 'TERRORIST' && p.role !== 'HOST' && p.isAlive).length;
+    
+    if (terrorists === 0) {
+        game.state.phase = 'GAME_OVER';
+        game.state.winner = 'VILLAGERS';
+        broadcastRoom(roomId, io);
+    } else if (terrorists >= innocent) {
+        game.state.phase = 'GAME_OVER';
+        game.state.winner = 'TERRORISTS';
+        broadcastRoom(roomId, io);
+    }
+}
 
 // Handle React Routing (any unknown route returns index.html)
 app.use((req, res) => {

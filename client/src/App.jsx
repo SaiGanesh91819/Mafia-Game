@@ -132,6 +132,8 @@ function App() {
   const [policeResult, setPoliceResult] = useState(null);
   const [roleAck, setRoleAck] = useState(false);
   const [showEjection, setShowEjection] = useState(false);
+  
+  const [rooms, setRooms] = useState([]); // List of available games
 
   // Persistent ID Helper
   const [myPlayerId] = useState(() => {
@@ -145,6 +147,8 @@ function App() {
 
   useEffect(() => {
     socket.on('connect', () => socket.emit('reconnect_session', { playerId: myPlayerId }));
+
+    socket.on('rooms_list', (list) => setRooms(list)); // Update lobby list
 
     socket.on('state_update', (data) => {
         setPlayers(data.players);
@@ -167,6 +171,14 @@ function App() {
         if (data.gameState.phase === 'NIGHT_POLICE') setPoliceResult(null);
     });
     
+    socket.on('game_closed', () => {
+        alert("The Host has disbanded the operation.");
+        setView('LANDING');
+        setMe({ id: '', playerId: myPlayerId, name: '', role: null, roleViewed: false });
+        setPlayers([]);
+        setGameState({ phase: 'LOBBY' });
+    });
+    
     socket.on('error_message', (msg) => { SoundFX.alert(); alert(msg); });
     socket.on('police_result', (r) => { SoundFX.reveal(); setPoliceResult(r); });
     
@@ -179,6 +191,8 @@ function App() {
         socket.off('connect'); 
         socket.off('state_update'); 
         socket.off('police_result');
+        socket.off('rooms_list');
+        socket.off('game_closed');
         window.removeEventListener('touchstart', unlockAudio);
         window.removeEventListener('click', unlockAudio);
     };
@@ -190,6 +204,12 @@ function App() {
        socket.emit('create_game_setup', { name: gameName, hostName: inputName, roles: setupConfig, playerId: myPlayerId });
   };
 
+  const handleJoin = (roomId) => {
+      if(!inputName) return alert("ENTER YOUR CODENAME FIRST");
+      SoundFX.click();
+      socket.emit('join_game', { roomId, name: inputName, playerId: myPlayerId });
+  };
+
   const isNight = gameState.phase?.includes('NIGHT');
   const isHost = me.role === 'HOST';
 
@@ -199,14 +219,21 @@ function App() {
               <h1>MAFIA <span style={{color: 'var(--accent-red)'}}>LAN</span></h1>
               <div className="card">
                   <input className="input-primary"
-                    value={inputName} onChange={e => setInputName(e.target.value)} placeholder="ENTER NAME" maxLength={12}/>
+                    value={inputName} onChange={e => setInputName(e.target.value)} placeholder="ENTER CODENAME" maxLength={12}/>
                   
-                  {gameConfig.isCreated ? (
-                      <button className="btn btn-primary" onClick={() => { if(!inputName)return alert("Name!"); SoundFX.click(); socket.emit('join_game', { name: inputName, playerId: myPlayerId })}}>
-                          JOIN: {gameConfig.gameName}
-                      </button>
-                  ) : <div style={{opacity:0.7, marginBottom:20}}>Scanning for signals... <span className="loader">...</span></div>}
-                  
+                  <h3>ACTIVE OPERATIONS</h3>
+                  <div className="room-list">
+                      {rooms.length === 0 ? <p style={{opacity:0.6}}>No active signals...</p> : rooms.map(r => (
+                          <div key={r.id} className="room-item" style={{display:'flex', justifyContent:'space-between', alignItems:'center', padding:10, background:'rgba(255,255,255,0.1)', marginBottom:5, borderRadius:5}}>
+                              <div>
+                                  <div style={{fontWeight:'bold'}}>{r.name}</div>
+                                  <div style={{fontSize:'0.8rem', opacity:0.7}}>Host: {r.host} | Agents: {r.count}</div>
+                              </div>
+                              <button className="btn btn-primary" style={{padding:'5px 10px', fontSize:'0.8rem'}} onClick={() => handleJoin(r.id)}>JOIN</button>
+                          </div>
+                      ))}
+                  </div>
+
                   <div className="separator" style={{margin:'20px 0', borderTop:'1px solid var(--border-color)'}}></div>
                   
                   <button className="btn btn-secondary" onClick={() => {if(!inputName)return alert("Name!"); SoundFX.click(); setView('SETUP')}}>
