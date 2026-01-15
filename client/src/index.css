@@ -197,6 +197,76 @@ button:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); box-s
   .role-reveal-container { height: 400px; }
 }
 
+/* EJECTION OVERLAY */
+.ejection-screen {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background-color: black;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: white;
+}
+
+.stars {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: 
+      radial-gradient(white, rgba(255,255,255,.2) 2px, transparent 3px),
+      radial-gradient(white, rgba(255,255,255,.15) 1px, transparent 2px),
+      radial-gradient(white, rgba(255,255,255,.1) 2px, transparent 3px);
+  background-size: 550px 550px, 350px 350px, 250px 250px;
+  background-position: 0 0, 40px 60px, 130px 270px;
+  z-index: -1;
+  animation: starMove 100s linear infinite;
+}
+
+.ejected-body {
+  position: relative;
+  width: 100px;
+  height: 120px;
+  animation: floatAway 5s linear forwards;
+}
+
+.crewmate {
+  width: 50px; height: 65px;
+  background: var(--accent-red);
+  border-radius: 25px 25px 15px 15px;
+  border: 4px solid #000;
+  position: relative;
+  box-shadow: inset -5px -5px rgba(0,0,0,0.2);
+}
+.crewmate::before { /* Backpack */
+  content: ''; position: absolute; left: -10px; top: 15px;
+  width: 12px; height: 35px; background: inherit;
+  border: 4px solid #000; border-radius: 5px; z-index: -1;
+}
+.crewmate::after { /* Visor */
+  content: ''; position: absolute; right: -8px; top: 12px;
+  width: 32px; height: 18px; background: #88eaff;
+  border: 4px solid #000; border-radius: 10px;
+}
+
+.ejection-text {
+  margin-top: 40px;
+  font-family: 'Courier New', Courier, monospace;
+  font-weight: bold;
+  font-size: 1.5rem;
+  opacity: 0;
+  animation: fadeIn 1s 1s forwards;
+  text-shadow: 2px 2px #000;
+}
+
+@keyframes floatAway {
+  0% { transform: translateX(-200px) rotate(0deg) scale(1.5); }
+  100% { transform: translateX(100vw) rotate(720deg) scale(0.5); }
+}
+
+@keyframes starMove { from {background-position: 0 0, 40px 60px, 130px 270px;} to {background-position: -1000px 500px, -600px 300px, 300px 100px;} }
+
 /* UTILS */
 .loader { display: inline-block; animation: pulse 1s infinite; font-weight: bold; }
 @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }

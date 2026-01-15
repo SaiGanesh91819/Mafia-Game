@@ -32,21 +32,40 @@ const broadcastState = () => io.emit('state_update', { players, gameState, gameC
 io.on('connection', (socket) => {
     socket.emit('state_update', { players, gameState, gameConfig });
 
-    socket.on('create_game_setup', ({ name, hostName, roles }) => {
-        players = [{ id: socket.id, name: hostName, isHost: true, isAlive: true, role: 'HOST', connected: true, roleViewed: true }];
+    socket.on('reconnect_session', ({ playerId }) => {
+        const existingPlayer = players.find(p => p.playerId === playerId);
+        if (existingPlayer) {
+            existingPlayer.id = socket.id; // Update Socket ID
+            existingPlayer.connected = true;
+            socket.emit('state_update', { players, gameState, gameConfig });
+            broadcastState(); // Notify others he is back
+        }
+    });
+
+    socket.on('create_game_setup', ({ name, hostName, roles, playerId }) => {
+        players = [{ id: socket.id, playerId, name: hostName, isHost: true, isAlive: true, role: 'HOST', connected: true, roleViewed: true }];
         gameState = { phase: 'LOBBY', round: 0, nightActions: {}, dayVotes: {} };
         gameConfig = { isCreated: true, gameName: name, roles: roles };
         broadcastState();
     });
 
-    socket.on('join_game', ({ name }) => {
+    socket.on('join_game', ({ name, playerId }) => {
         if (!gameConfig.isCreated || gameState.phase !== 'LOBBY') return socket.emit('error_message', "Cannot join now.");
+        
+        // Check if player already exists (rejoining via name/id)
+        const existing = players.find(p => p.playerId === playerId);
+        if (existing) {
+             existing.id = socket.id;
+             existing.connected = true;
+             existing.name = name;
+             broadcastState();
+             return;
+        }
+
         const totalRoles = (gameConfig.roles.terrorist || 0) + (gameConfig.roles.police || 0) + (gameConfig.roles.doctor || 0) + (gameConfig.roles.villager || 0);
         if (players.length - 1 >= totalRoles) return socket.emit('error_message', "Lobby is Full!");
 
-        if (!players.find(p => p.id === socket.id)) {
-            players.push({ id: socket.id, name, isHost: false, isAlive: true, role: null, connected: true, roleViewed: false });
-        }
+        players.push({ id: socket.id, playerId, name, isHost: false, isAlive: true, role: null, connected: true, roleViewed: false });
         broadcastState();
     });
 
@@ -136,11 +155,12 @@ io.on('connection', (socket) => {
         gameState.nightActions = {};
         broadcastState();
     });
-    socket.on('close_game', () => { gameConfig.isCreated = false; gameState.phase = 'SETUP'; broadcastState(); }); // Fixed Reset
+    socket.on('close_game', () => { gameConfig.isCreated = false; gameState.phase = 'SETUP'; broadcastState(); }); 
 
     socket.on('disconnect', () => {
-        if (gameState.phase === 'SETUP' || gameState.phase === 'LOBBY') players = players.filter(p => p.id !== socket.id);
-        else players = players.map(p => p.id === socket.id ? { ...p, connected: false } : p);
+        // Just mark as disconnected, don't remove unless in SETUP
+        players = players.map(p => p.id === socket.id ? { ...p, connected: false } : p);
+        if (gameState.phase === 'SETUP') players = players.filter(p => p.id !== socket.id); // Clean up in setup only
         broadcastState();
     });
 });

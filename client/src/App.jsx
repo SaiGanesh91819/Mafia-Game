@@ -61,9 +61,63 @@ const SelectionGrid = ({ players, onSelect, currentSelection, tempSelection, fil
   </div>
 );
 
+// --- AUDIO SYSTEM ---
+const SoundFX = {
+  ctx: new (window.AudioContext || window.webkitAudioContext)(),
+  playTone: (freq, type, duration, vol=0.1) => {
+    if (SoundFX.ctx.state === 'suspended') SoundFX.ctx.resume();
+    const osc = SoundFX.ctx.createOscillator();
+    const gain = SoundFX.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, SoundFX.ctx.currentTime);
+    gain.gain.setValueAtTime(vol, SoundFX.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, SoundFX.ctx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(SoundFX.ctx.destination);
+    osc.start();
+    osc.stop(SoundFX.ctx.currentTime + duration);
+  },
+  click: () => SoundFX.playTone(800, 'sine', 0.1),
+  alert: () => { SoundFX.playTone(300, 'square', 0.3, 0.2); setTimeout(()=>SoundFX.playTone(250, 'square', 0.3, 0.2), 300); },
+  reveal: () => {
+       SoundFX.playTone(100, 'sawtooth', 2.0, 0.3);
+       SoundFX.playTone(150, 'sawtooth', 2.0, 0.2);
+       SoundFX.playTone(200, 'sawtooth', 2.0, 0.2);
+  },
+  victory: () => {
+      SoundFX.playTone(523.25, 'sine', 0.2); 
+      setTimeout(()=>SoundFX.playTone(659.25, 'sine', 0.2), 200); 
+      setTimeout(()=>SoundFX.playTone(783.99, 'sine', 0.4), 400);
+  },
+  defeat: () => {
+      SoundFX.playTone(300, 'sawtooth', 0.5); 
+      setTimeout(()=>SoundFX.playTone(200, 'sawtooth', 1.0), 500);
+  }
+};
+
+const EjectionView = ({ name, role, onComplete }) => {
+    useEffect(() => {
+        SoundFX.reveal();
+        const timer = setTimeout(onComplete, 4000);
+        return () => clearTimeout(timer);
+    }, []);
+
+    return (
+        <div className="ejection-screen">
+            <div className="stars"></div>
+            <div className="ejected-body">
+                <div className="crewmate"></div>
+            </div>
+            <h1 className="ejection-text">
+                {name} was {role === 'TERRORIST' ? 'The Impostor' : 'not The Impostor'}.
+            </h1>
+        </div>
+    );
+};
+
 // --- MAIN APP ---
 function App() {
-  const [me, setMe] = useState({ id: '', name: '', role: null, roleViewed: false });
+  const [me, setMe] = useState({ id: '', playerId: '', name: '', role: null, roleViewed: false });
   const [view, setView] = useState('LANDING'); 
   const [inputName, setInputName] = useState('');
   const [gameName, setGameName] = useState('Mafia LAN');
@@ -74,29 +128,51 @@ function App() {
   const [gameConfig, setGameConfig] = useState({});
   const [policeResult, setPoliceResult] = useState(null);
   const [roleAck, setRoleAck] = useState(false);
+  const [showEjection, setShowEjection] = useState(false);
+
+  // Persistent ID Helper
+  const [myPlayerId] = useState(() => {
+      let id = localStorage.getItem('mafia_player_id');
+      if (!id) {
+          id = Math.random().toString(36).substr(2, 9);
+          localStorage.setItem('mafia_player_id', id);
+      }
+      return id;
+  });
 
   useEffect(() => {
-    socket.on('connect', () => { setMe(p => ({...p, id: socket.id})); });
+    socket.on('connect', () => socket.emit('reconnect_session', { playerId: myPlayerId }));
+
     socket.on('state_update', (data) => {
         setPlayers(data.players);
         setGameState(data.gameState);
         setGameConfig(data.gameConfig);
-        const myData = data.players.find(p => p.id === socket.id);
+        
+        const myData = data.players.find(p => p.playerId === myPlayerId) || data.players.find(p => p.id === socket.id);
         if (myData) {
             setMe(p => ({ ...p, ...myData }));
-            if (data.gameState.phase === 'LOBBY' || data.gameState.phase !== 'SETUP') setView('GAME');
-            if (data.gameState.phase === 'SETUP') setView('LANDING'); 
+            setView(v => {
+                if (data.gameState.phase !== 'SETUP' && v === 'LANDING') return 'GAME';
+                if (data.gameState.phase === 'SETUP') return 'LANDING';
+                return v;
+            });
         }
+        
+        if (data.gameState.phase === 'DAY_ELIMINATION') setShowEjection(true);
+        else setShowEjection(false);
+        
         if (data.gameState.phase === 'NIGHT_POLICE') setPoliceResult(null);
     });
-    socket.on('error_message', (msg) => alert(msg));
-    socket.on('police_result', (r) => setPoliceResult(r));
+    
+    socket.on('error_message', (msg) => { SoundFX.alert(); alert(msg); });
+    socket.on('police_result', (r) => { SoundFX.reveal(); setPoliceResult(r); });
     return () => { socket.off('connect'); socket.off('state_update'); socket.off('police_result'); };
-  }, [me.id]);
+  }, [myPlayerId]);
 
   const handleCreate = () => {
        if(!gameName) return alert("Name required");
-       socket.emit('create_game_setup', { name: gameName, hostName: inputName, roles: setupConfig });
+       SoundFX.click();
+       socket.emit('create_game_setup', { name: gameName, hostName: inputName, roles: setupConfig, playerId: myPlayerId });
   };
 
   const isNight = gameState.phase?.includes('NIGHT');
@@ -111,14 +187,14 @@ function App() {
                     value={inputName} onChange={e => setInputName(e.target.value)} placeholder="ENTER CODENAME" maxLength={12}/>
                   
                   {gameConfig.isCreated ? (
-                      <button className="btn btn-primary" onClick={() => { if(!inputName)return alert("Name!"); socket.emit('join_game', { name: inputName })}}>
+                      <button className="btn btn-primary" onClick={() => { if(!inputName)return alert("Name!"); SoundFX.click(); socket.emit('join_game', { name: inputName, playerId: myPlayerId })}}>
                           JOIN: {gameConfig.gameName}
                       </button>
                   ) : <div style={{opacity:0.7, marginBottom:20}}>Scanning for signals... <span className="loader">...</span></div>}
                   
                   <div className="separator" style={{margin:'20px 0', borderTop:'1px solid var(--border-color)'}}></div>
                   
-                  <button className="btn btn-secondary" onClick={() => {if(!inputName)return alert("Name!"); setView('SETUP')}}>
+                  <button className="btn btn-secondary" onClick={() => {if(!inputName)return alert("Name!"); SoundFX.click(); setView('SETUP')}}>
                       INITIATE NEW OPERATION
                   </button>
               </div>
@@ -144,7 +220,7 @@ function App() {
                       ))}
                   </div>
                   <button className="btn btn-primary" style={{marginTop:20}} onClick={handleCreate}>INITIALIZE LOBBY</button>
-                  <button className="btn btn-secondary" onClick={() => setView('LANDING')}>ABORT</button>
+                  <button className="btn btn-secondary" onClick={() => { SoundFX.click(); setView('LANDING'); }}>ABORT</button>
               </div>
           </div>
       );
@@ -155,6 +231,14 @@ function App() {
       <div className={`container ${isNight ? 'night-mode' : 'day-mode'}`}>
           <SkyParams isNight={isNight} />
           
+          {showEjection && gameState.eliminated && (
+               <EjectionView 
+                    name={players.find(p=>p.id===gameState.eliminated)?.name} 
+                    role={players.find(p=>p.id===gameState.eliminated)?.role}
+                    onComplete={() => setShowEjection(false)} 
+               />
+          )}
+
           <div className="top-bar">
               <div className="phase-badge">{gameState.phase?.replace('_', ' ')}</div>
               {!isHost && (roleAck || gameState.phase !== 'ROLE_REVEAL') && me.role && (
@@ -169,7 +253,7 @@ function App() {
                   <div className="player-list">
                       {players.map(p => <div key={p.id} className="player-item">{p.name} {p.isHost && '👑'}</div>)}
                   </div>
-                  {isHost ? <button className="btn btn-primary" onClick={() => socket.emit('start_game')}>COMMENCE MISSION</button> : <p>Waiting for command...</p>}
+                  {isHost ? <button className="btn btn-primary" onClick={() => { SoundFX.click(); socket.emit('start_game'); }}>COMMENCE MISSION</button> : <p>Waiting for command...</p>}
               </div>
           )}
 
@@ -178,16 +262,16 @@ function App() {
                   <div className="card">
                       <h2>ASSIGNING IDENTITIES...</h2>
                       <div className="player-list">{players.filter(p=>!p.isHost).map(p => (<div key={p.id} className="player-item" style={{borderColor: p.roleViewed ? 'var(--accent-green)' : 'var(--accent-red)', opacity: p.roleViewed ? 1 : 0.5}}>{p.name} {p.roleViewed ? '✅' : '⏳'}</div>))}</div>
-                      <button className="btn btn-primary" disabled={players.some(p => !p.isHost && !p.roleViewed)} onClick={() => socket.emit('start_night')}>PROCEED TO NIGHT</button>
+                      <button className="btn btn-primary" disabled={players.some(p => !p.isHost && !p.roleViewed)} onClick={() => { SoundFX.click(); socket.emit('start_night'); }}>PROCEED TO NIGHT</button>
                   </div>
               ) : !roleAck ? (
-                  <div style={{zIndex:2, width:'100%'}}><RoleFlipCard role={me.role} details={me.roleDetails} onDismiss={() => { setRoleAck(true); socket.emit('ack_role'); }} /></div>
+                  <div style={{zIndex:2, width:'100%'}}><RoleFlipCard role={me.role} details={me.roleDetails} onDismiss={() => { SoundFX.click(); setRoleAck(true); socket.emit('ack_role'); }} /></div>
               ) : (
                   <div className="card"><h2>IDENTITY SECURED</h2><p>Waiting for others...</p></div>
               )
           )}
           
-          {gameState.phase !== 'LOBBY' && gameState.phase !== 'ROLE_REVEAL' && (
+          {gameState.phase !== 'LOBBY' && gameState.phase !== 'ROLE_REVEAL' && !showEjection && (
                <div style={{width:'100%', display:'flex', justifyContent:'center', zIndex:2}}>
                   <GameView isHost={isHost} me={me} gameState={gameState} players={players} policeResult={policeResult} />
                </div>
@@ -196,13 +280,29 @@ function App() {
   );
 }
 
+const VictoryView = ({ gameState, me, isHost }) => {
+    const isWinner = (me.role === 'TERRORIST' && gameState.winner === 'TERRORISTS') || (me.role !== 'TERRORIST' && gameState.winner === 'VILLAGERS');
+    useEffect(() => { if(isWinner) SoundFX.victory(); else SoundFX.defeat(); }, []);
+
+    return (
+        <div className="ejection-screen" style={{background: isWinner ? 'radial-gradient(circle, #001a00 0%, #000 100%)' : 'radial-gradient(circle, #200000 0%, #000 100%)'}}>
+                <div className="stars"></div>
+                <h1 style={{fontSize:'3rem', color: isWinner ? 'var(--accent-green)' : 'var(--accent-red)'}}>{isWinner ? 'VICTORY' : 'DEFEAT'}</h1>
+                <h2>{gameState.winner} WON</h2>
+                {isHost && <button className="btn btn-primary" onClick={() => { SoundFX.click(); socket.emit('close_game'); }}>CLOSE GAME</button>}
+        </div>
+    );
+};
+
+// --- GAME VIEW ---
 const GameView = ({ isHost, me, gameState, players, policeResult }) => {
     const [tempSelection, setTempSelection] = useState(null);
     useEffect(() => { setTempSelection(null); }, [gameState.phase]);
 
-    const handleSelect = (id) => setTempSelection(id);
+    const handleSelect = (id) => { SoundFX.click(); setTempSelection(id); };
     const handleConfirm = (actionEvent) => {
         if (!tempSelection) return;
+        SoundFX.click();
         socket.emit(actionEvent, tempSelection);
         setTempSelection(null); 
     };
@@ -226,14 +326,14 @@ const GameView = ({ isHost, me, gameState, players, policeResult }) => {
                 <div>Doc Save: {players.find(p=>p.id===gameState.nightActions?.doctorSelection)?.name || '-'}</div>
             </div>
 
-            {gameState.phase === 'NIGHT_TERRORIST' && <button className="btn btn-primary" onClick={() => socket.emit('host_confirm_terrorist')}>CONFIRM & NEXT</button>}
-            {gameState.phase === 'NIGHT_POLICE' && <button className="btn btn-primary" onClick={() => socket.emit('host_confirm_police')}>CONFIRM & NEXT</button>}
-            {gameState.phase === 'NIGHT_DOCTOR' && <button className="btn btn-primary" onClick={() => socket.emit('host_confirm_doctor')}>CONFIRM & WAKE UP</button>}
-            {gameState.phase === 'DAY_ANNOUNCE' && <button className="btn btn-primary" onClick={() => socket.emit('start_discussion')}>START DISCUSSION</button>}
-            {gameState.phase === 'DAY_DISCUSSION' && <button className="btn btn-primary" onClick={() => socket.emit('start_voting')}>START VOTING</button>}
-            {gameState.phase === 'DAY_VOTE' && <button className="btn btn-danger" onClick={() => socket.emit('finalize_vote')}>FINALIZE VOTES</button>}
-            {gameState.phase === 'DAY_ELIMINATION' && <button className="btn btn-primary" onClick={() => socket.emit('next_round')}>START NEXT NIGHT</button>}
-            {gameState.phase === 'GAME_OVER' && <button className="btn btn-primary" onClick={() => socket.emit('close_game')}>CLOSE GAME</button>}
+            {gameState.phase === 'NIGHT_TERRORIST' && <button className="btn btn-primary" onClick={() => { SoundFX.click(); socket.emit('host_confirm_terrorist'); }}>CONFIRM & NEXT</button>}
+            {gameState.phase === 'NIGHT_POLICE' && <button className="btn btn-primary" onClick={() => { SoundFX.click(); socket.emit('host_confirm_police'); }}>CONFIRM & NEXT</button>}
+            {gameState.phase === 'NIGHT_DOCTOR' && <button className="btn btn-primary" onClick={() => { SoundFX.click(); socket.emit('host_confirm_doctor'); }}>CONFIRM & WAKE UP</button>}
+            {gameState.phase === 'DAY_ANNOUNCE' && <button className="btn btn-primary" onClick={() => { SoundFX.click(); socket.emit('start_discussion'); }}>START DISCUSSION</button>}
+            {gameState.phase === 'DAY_DISCUSSION' && <button className="btn btn-primary" onClick={() => { SoundFX.click(); socket.emit('start_voting'); }}>START VOTING</button>}
+            {gameState.phase === 'DAY_VOTE' && <button className="btn btn-danger" onClick={() => { SoundFX.click(); socket.emit('finalize_vote'); }}>FINALIZE VOTES</button>}
+            {gameState.phase === 'DAY_ELIMINATION' && <button className="btn btn-primary" onClick={() => { SoundFX.click(); socket.emit('next_round'); }}>START NEXT NIGHT</button>}
+            {gameState.phase === 'GAME_OVER' && <button className="btn btn-primary" onClick={() => { SoundFX.click(); socket.emit('close_game'); }}>CLOSE GAME</button>}
         </div>;
     }
     
@@ -275,11 +375,12 @@ const GameView = ({ isHost, me, gameState, players, policeResult }) => {
     if (gameState.phase === 'DAY_VOTE') return <div className="card">
         <h3>VOTE TO ELIMINATE</h3>
         <SelectionGrid players={players} onSelect={handleSelect} currentSelection={gameState.dayVotes && gameState.dayVotes[me.id]} tempSelection={tempSelection} />
-        <button className="btn btn-danger" disabled={!tempSelection} onClick={() => socket.emit('cast_vote', {voterId:me.id, targetId:tempSelection})}>CONFIRM VOTE</button>
+        <button className="btn btn-danger" disabled={!tempSelection} onClick={() => { SoundFX.click(); socket.emit('cast_vote', {voterId:me.id, targetId:tempSelection}); }}>CONFIRM VOTE</button>
     </div>;
 
-    if (gameState.phase === 'DAY_ELIMINATION') return <div className="card" style={{color:'var(--accent-red)'}}><h1>ELIMINATED</h1><h2>{players.find(p=>p.id===gameState.eliminated)?.name}</h2></div>;
-    if (gameState.phase === 'GAME_OVER') return <div className="card"><h1>VICTORY FOR {gameState.winner}</h1></div>;
+    if (gameState.phase === 'DAY_ELIMINATION') return null; // Handled by EjectionView
+    
+    if (gameState.phase === 'GAME_OVER') return <VictoryView gameState={gameState} me={me} isHost={isHost} />;
 
     return null;
 }
