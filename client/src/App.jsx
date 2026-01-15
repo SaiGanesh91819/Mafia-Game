@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import io from 'socket.io-client'
 
-const socket = io(`http://${window.location.hostname}:3000`);
+const socket = import.meta.env.PROD ? io() : io(`http://${window.location.hostname}:3000`);
 
 // --- UI COMPONENTS ---
 const JumbleText = ({ text }) => {
