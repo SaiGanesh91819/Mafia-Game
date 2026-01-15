@@ -159,7 +159,7 @@ function App() {
         if (myData) {
             setMe(p => ({ ...p, ...myData }));
             setView(v => {
-                if (data.gameState.phase !== 'SETUP' && v === 'LANDING') return 'GAME';
+                if (data.gameState.phase !== 'SETUP' && (v === 'LANDING' || v === 'SETUP')) return 'GAME';
                 if (data.gameState.phase === 'SETUP') return 'LANDING';
                 return v;
             });
