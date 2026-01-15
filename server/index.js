@@ -146,7 +146,7 @@ io.on('connection', (socket) => {
 });
 
 // Handle React Routing (any unknown route returns index.html)
-app.get('*', (req, res) => {
+app.use((req, res) => {
   res.sendFile(path.resolve(__dirname, '../client/dist', 'index.html'));
 });
 
