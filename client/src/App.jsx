@@ -295,7 +295,12 @@ function App() {
                   <div className="player-list">
                       {players.map(p => <div key={p.id} className="player-item">{p.name} {p.isHost && '👑'}</div>)}
                   </div>
-                  {isHost ? <button className="btn btn-primary" onClick={() => { SoundFX.click(); socket.emit('start_game'); }}>COMMENCE MISSION</button> : <p>Waiting for command...</p>}
+                  {isHost ? (
+                      <div style={{display:'flex', gap:10, justifyContent:'center'}}>
+                          <button className="btn btn-primary" onClick={() => { SoundFX.click(); socket.emit('start_game'); }}>COMMENCE MISSION</button>
+                          <button className="btn btn-secondary" onClick={() => { SoundFX.click(); socket.emit('close_game'); }}>ABORT</button>
+                      </div>
+                  ) : <p>Waiting for command...</p>}
               </div>
           )}
 
@@ -375,6 +380,13 @@ const GameView = ({ isHost, me, gameState, players, policeResult }) => {
             {gameState.phase === 'DAY_DISCUSSION' && <button className="btn btn-primary" onClick={() => { SoundFX.click(); socket.emit('start_voting'); }}>START VOTING</button>}
             {gameState.phase === 'DAY_VOTE' && <button className="btn btn-danger" onClick={() => { SoundFX.click(); socket.emit('finalize_vote'); }}>FINALIZE VOTES</button>}
             {gameState.phase === 'DAY_ELIMINATION' && <button className="btn btn-primary" onClick={() => { SoundFX.click(); socket.emit('next_round'); }}>START NEXT NIGHT</button>}
+            
+            {gameState.phase !== 'GAME_OVER' && (
+                 <button className="btn btn-secondary" style={{marginTop:20, width:'100%'}} onClick={() => { 
+                     if(confirm("Abort Mission? This will end the game for everyone.")) { SoundFX.click(); socket.emit('close_game'); } 
+                 }}>ABORT OPERATION</button>
+            )}
+
             {gameState.phase === 'GAME_OVER' && <button className="btn btn-primary" onClick={() => { SoundFX.click(); socket.emit('close_game'); }}>CLOSE GAME</button>}
         </div>;
     }
